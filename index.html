@@ -49,6 +49,12 @@ input,select{font:inherit;color:var(--text)}
 .row>.sub{max-width:55%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1}
 .savewarn{position:fixed;left:0;right:0;top:0;z-index:60;background:var(--danger);color:#fff;font-size:14px;font-weight:600;padding:calc(var(--safe-t) + 8px) 14px 8px;text-align:center}
 .row.tap{cursor:pointer}
+.swipe{position:relative;overflow:hidden;border-bottom:.5px solid var(--line)}
+.swipe:last-child{border-bottom:0}
+.swipe .row{border-bottom:0}
+.swipe-del{position:absolute;right:0;top:0;bottom:0;width:88px;border:0;background:var(--danger);color:#fff;font-size:16px;font-weight:600}
+.swipe:not(.sw-on) .swipe-del{visibility:hidden}
+.swipe-c{position:relative;z-index:1;background:var(--card);transition:transform .2s ease;touch-action:pan-y}
 .row.tap:active{background:var(--line)}
 .grow{flex:1;min-width:0}
 .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

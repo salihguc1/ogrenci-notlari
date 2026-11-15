@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const VERSION = '1.12';
+  const VERSION = '1.13';
   const KEY = 'notdefteri.v1';
   const app = document.getElementById('app');
   let EMBED = false; try { EMBED = window.self !== window.top; } catch (e) { EMBED = true; }
@@ -344,12 +344,13 @@
         for (const c of groups[g].sort((a, b) => a.name.localeCompare(b.name, 'tr', { numeric: true }))) {
           const parts = [];
           for (const k of sortedItems(c)) { const p = progress(c, k); const lb = isProje(k) ? defLabel(k) : k; if (p.done) parts.push(p.done === p.total ? `${lb} ✓` : `${lb} ${p.done}/${p.total}`); }
-          body += `<div class="row tap" data-act="class" data-id="${c.id}"><div class="grow"><div class="name" style="font-weight:600">${esc(c.name)}</div>
-            <div class="sub">${c.students.length} öğrenci${parts.length ? ' · ' + esc(parts.join(' · ')) : ''}</div></div><span class="chev">›</span></div>`;
+          body += `<div class="swipe"><button class="swipe-del" data-act="delclass" data-id="${c.id}">Sil</button>
+            <div class="row tap swipe-c" data-act="class" data-id="${c.id}"><div class="grow"><div class="name" style="font-weight:600">${esc(c.name)}</div>
+            <div class="sub">${c.students.length} öğrenci${parts.length ? ' · ' + esc(parts.join(' · ')) : ''}</div></div><span class="chev">›</span></div></div>`;
         }
         body += `</div>`;
       }
-      body += `<div class="sec">Tüm sınıflar</div><div class="two"><button class="btn" data-act="pdfall">PDF (imza için)</button><button class="btn sec2" data-act="exportall">Excel</button></div>
+      body += `<div class="note">Bir sınıfı silmek için sola kaydırın.</div><div class="sec">Tüm sınıflar</div><div class="two"><button class="btn" data-act="pdfall">PDF (imza için)</button><button class="btn sec2" data-act="exportall">Excel</button></div>
         <button class="btn sec2" data-act="import">Excel'den sınıf listesi al</button>
         <button class="btn sec2" data-act="newclass">Elle sınıf oluştur</button>`;
     }
@@ -368,6 +369,7 @@
       const act = a.dataset.act;
       if (act === 'term') { db.term = +a.dataset.t; save(); render(); }
       else if (act === 'class') go({ name: 'class', id: a.dataset.id });
+      else if (act === 'delclass') { const c = cls(a.dataset.id); if (c) deleteClass(c, () => render()); }
       else if (act === 'settings') go({ name: 'settings' });
       else if (act === 'import') startImport();
       else if (act === 'newclass') go({ name: 'newclass' });
@@ -409,6 +411,7 @@
           <div class="row tap" data-act="lesson"><div class="grow">Ders</div><span class="sub">${esc(c.lesson || 'Ekle')}</span><span class="chev">›</span></div>
           <div class="row tap" data-act="copy"><div class="grow">Başka bir ders için kopyala</div><span class="chev">›</span></div>
           <div class="row tap" data-act="info"><div class="grow">Sınıf bilgileri</div><span class="chev">›</span></div>
+          <div class="row tap" data-act="delclass"><div class="grow" style="color:var(--danger)">Bu sınıfı / dersi sil</div></div>
         </div>
       </div>`;
     app.onclick = e => {
@@ -418,6 +421,7 @@
       else if (act === 'entry') { if (!c.students.length) return toast('Bu sınıfta öğrenci yok.'); go({ name: 'entry', id: c.id, k: a.dataset.k, sel: firstEmpty(c, a.dataset.k), buf: '' }); }
       else if (act === 'export') exportClasses([c]);
       else if (act === 'additem') addItemDialog(c);
+      else if (act === 'delclass') deleteClass(c, () => home());
       else if (act === 'pdf') exportPDF([c]);
       else if (act === 'lesson') askText('Ders adı', c.lesson || '').then(v => {
         if (v === null) return; v = v.trim();
@@ -456,6 +460,15 @@
       if (all) others.forEach(o => addItem(o, type, t));
       save(); render();
       toast(all ? `${others.length + 1} sınıfa eklendi` : 'Not eklendi');
+    });
+  }
+
+  function deleteClass(c, after) {
+    const title = c.name + (c.lesson ? ' · ' + c.lesson : '');
+    let n = 0; for (const t of Object.values(c.terms || {})) for (const a of Object.values(t)) n += Object.keys(a.e || {}).length;
+    ask(`${title} silinsin mi?\n${c.students.length} öğrenci${n ? ` ve ${n} not` : ''} silinecek. Bu işlem geri alınamaz.`, 'Evet, sil', true).then(y => {
+      if (!y) { closeSwipes(); return; }
+      db.classes = db.classes.filter(x => x !== c); save(); after(); toast(`${title} silindi`);
     });
   }
 
@@ -835,7 +848,7 @@
         c.name = n; c.school = sc; c.lesson = le;
         save(); toast('Kaydedildi'); back();
       } else if (a.dataset.act === 'delete') {
-        ask(`${c.name} ve bu sınıfa girilmiş tüm notlar silinsin mi?`, 'Sınıfı sil', true).then(y => { if (y) { db.classes = db.classes.filter(x => x !== c); save(); home(); toast('Sınıf silindi'); } });
+        deleteClass(c, () => home());
       }
     };
   };
@@ -1040,6 +1053,45 @@
     if (view.name === 'entry') { const sc = (document.getElementById('list') || {}).scrollTop || 0; render(); const l = document.getElementById('list'); if (l) l.scrollTop = sc; }
     else if (!document.querySelector('.sheet-bg') && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '')) render();
   });
+
+  // ---------- sola kaydırınca "Sil" (iPhone'daki gibi) ----------
+  const SW = 88; let sw = null, swipeEndAt = 0;
+  function closeSwipes(except) {
+    document.querySelectorAll('.swipe-c.open, .swipe.sw-on .swipe-c').forEach(el => { if (el !== except) { el.classList.remove('open'); el.style.transform = ''; const p = el.parentElement; setTimeout(() => { if (!el.classList.contains('open') && !(sw && sw.el === el)) p.classList.remove('sw-on'); }, 220); } });
+  }
+  app.addEventListener('pointerdown', e => {
+    const c = e.target.closest('.swipe-c');
+    if (e.target.closest('.swipe-del')) return;
+    if (document.querySelector('.swipe-c.open') && (!c || !c.classList.contains('open'))) { closeSwipes(); swipeEndAt = Date.now(); sw = null; return; }
+    if (!c) return;
+    sw = { el: c, x: e.clientX, y: e.clientY, base: c.classList.contains('open') ? -SW : 0, dx: 0, active: false, id: e.pointerId };
+  });
+  app.addEventListener('pointermove', e => {
+    if (!sw || e.pointerId !== sw.id) return;
+    const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+    if (!sw.active) {
+      if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) { sw.active = true; closeSwipes(sw.el); sw.el.style.transition = 'none'; sw.el.parentElement.classList.add('sw-on'); }
+      else if (Math.abs(dy) > 10) { sw = null; return; }
+      else return;
+    }
+    sw.dx = dx;
+    sw.el.style.transform = `translateX(${Math.max(-SW - 30, Math.min(0, sw.base + dx))}px)`;
+  });
+  const swEnd = () => {
+    if (!sw) return;
+    const s = sw; sw = null;
+    if (!s.active) { if (s.base) { closeSwipes(); swipeEndAt = Date.now(); } return; }
+    s.el.style.transition = '';
+    const open = s.base + s.dx < -SW / 2;
+    s.el.classList.toggle('open', open); s.el.style.transform = open ? `translateX(${-SW}px)` : '';
+    if (!open) setTimeout(() => { if (!s.el.classList.contains('open')) s.el.parentElement.classList.remove('sw-on'); }, 220);
+    swipeEndAt = Date.now();
+  };
+  app.addEventListener('pointerup', swEnd); app.addEventListener('pointercancel', swEnd);
+  // kaydırmanın sonundaki dokunuş sınıfı açmasın
+  document.addEventListener('click', e => {
+    if (Date.now() - swipeEndAt < 350 && !e.target.closest('.swipe-del')) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
 
   // ---------- başlat ----------
   if (loadWarning) setTimeout(() => ask(loadWarning, 'Tamam'), 400);
