@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const VERSION = '1.13';
+  const VERSION = '1.14';
   const KEY = 'notdefteri.v1';
   const app = document.getElementById('app');
   let EMBED = false; try { EMBED = window.self !== window.top; } catch (e) { EMBED = true; }
@@ -90,7 +90,7 @@
   function progress(c, key) {
     const a = getA(c, key, false); let done = 0, sum = 0, cnt = 0;
     if (a) for (const s of c.students) { const f = finalOf(a.e[s.no]); if (f != null) { done++; if (typeof f === 'number') { sum += f; cnt++; } } }
-    return { done, total: c.students.length, avg: cnt ? Math.round(sum / cnt) : null };
+    return { done, total: c.students.length, avg: cnt ? Math.round(sum / cnt) : null, missing: c.students.length - cnt };
   }
 
   // ---------- yardımcılar ----------
@@ -160,6 +160,7 @@
   // ---------- alt sayfa (sheet) ----------
   function openSheet(html, onClick) {
     closeSheet();
+    { const tt = document.querySelector('.toast'); if (tt) tt.style.display = 'none'; }
     const bg = document.createElement('div'); bg.className = 'sheet-bg';
     bg.innerHTML = `<div class="sheet">${html}</div>`;
     const opened = Date.now();
@@ -172,6 +173,7 @@
   function dialog(html, onMount) {
     return new Promise(res => {
       closeSheet();
+      { const tt = document.querySelector('.toast'); if (tt) tt.style.display = 'none'; }
       const bg = document.createElement('div'); bg.className = 'sheet-bg';
       bg.innerHTML = `<div class="sheet">${html}</div>`;
       document.body.appendChild(bg);
@@ -395,6 +397,7 @@
       return `<button class="tile" data-act="entry" data-k="${k}"><b class="name">${esc(itemLabel(c, k))}</b>
         <div class="sub">${a && a.title ? defLabel(k) : '&nbsp;'}</div>
         <div class="sub">${p.done ? `${p.done}/${p.total} girildi` : 'Henüz not yok'}${p.avg != null ? ` · Ort. ${p.avg}` : ''}</div>
+        ${p.done && p.missing ? `<div class="sub" style="color:var(--danger)">${p.missing} teslim etmedi</div>` : ''}
         <div class="bar ${p.done && p.done === p.total ? 'full' : ''}"><i style="width:${pct}%"></i></div></button>`;
     }).join('') + `<button class="tile addtile" data-act="additem"><span style="font-size:28px;line-height:1">+</span><b>Not ekle</b><div class="sub">Performans ya da proje</div></button>`;
     app.innerHTML = `<div class="top"><button class="back" data-act="back">‹ Sınıflar</button></div>
@@ -406,6 +409,7 @@
         <div class="two"><button class="btn" data-act="pdf">PDF (imza için)</button><button class="btn sec2" data-act="export">Excel</button></div>
         <div class="sec">Sınıf</div>
         <div class="card">
+          <div class="row tap" data-act="notes"><div class="grow">Ders notları</div><span class="sub">${(() => { const tn = termNotes(c).filter(n => !n.done); const od = tn.filter(n => n.due && n.due < today()).length; return tn.length ? (od ? `<span style="color:var(--danger)">${tn.length} açık · ${od} gecikmiş</span>` : `${tn.length} açık`) : ''; })()}</span><span class="chev">›</span></div>
           <div class="row tap" data-act="logs"><div class="grow">Puan kırma kayıtları</div><span class="sub">${termLogs(c).length || ''}</span><span class="chev">›</span></div>
           <div class="row tap" data-act="students"><div class="grow">Öğrenciler</div><span class="sub">${c.students.length}</span><span class="chev">›</span></div>
           <div class="row tap" data-act="lesson"><div class="grow">Ders</div><span class="sub">${esc(c.lesson || 'Ekle')}</span><span class="chev">›</span></div>
@@ -418,7 +422,7 @@
       const a = e.target.closest('[data-act]'); if (!a) return;
       const act = a.dataset.act;
       if (act === 'back') back();
-      else if (act === 'entry') { if (!c.students.length) return toast('Bu sınıfta öğrenci yok.'); go({ name: 'entry', id: c.id, k: a.dataset.k, sel: firstEmpty(c, a.dataset.k), buf: '' }); }
+      else if (act === 'entry') { if (!c.students.length) return toast('Bu sınıfta öğrenci yok.'); go({ name: 'entry', id: c.id, k: a.dataset.k, sel: firstEmpty(c, a.dataset.k), buf: '', only: null }); }
       else if (act === 'export') exportClasses([c]);
       else if (act === 'additem') addItemDialog(c);
       else if (act === 'delclass') deleteClass(c, () => home());
@@ -435,6 +439,7 @@
       });
       else if (act === 'students') go({ name: 'students', id: c.id });
       else if (act === 'logs') go({ name: 'logs', id: c.id, filter: '' });
+      else if (act === 'notes') go({ name: 'notes', id: c.id });
       else if (act === 'info') go({ name: 'info', id: c.id });
     };
   };
@@ -472,6 +477,19 @@
     });
   }
 
+  const GUN = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const parseYmd = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+  const dueLabel = s => { const d = parseYmd(s); return d ? `${GUN[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}` : s; };
+  function dueChips() {
+    const t = new Date(); t.setHours(0, 0, 0, 0);
+    const add = n => { const d = new Date(t); d.setDate(d.getDate() + n); return d; };
+    const nextMon = add(7 - ((t.getDay() + 6) % 7));
+    const out = [['Yarın', add(1)], ['Haftaya bugün', add(7)]];
+    ['Pzt', 'Sal', 'Çar', 'Per', 'Cum'].forEach((g, k) => { const d = new Date(nextMon); d.setDate(d.getDate() + k); out.push([`Haftaya ${g}`, d]); });
+    return out.map(([l, d]) => `<button class="rchip" data-due="${ymd(d)}">${l} <span style="opacity:.7">${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}</span></button>`).join('');
+  }
+
   function firstEmpty(c, k) {
     const a = getA(c, k, false); if (!a) return 0;
     const i = c.students.findIndex(s => finalOf(a.e[s.no]) == null);
@@ -485,7 +503,7 @@
     view.pad = !!view.pad;
     app.innerHTML = `<div class="entry ${view.pad ? '' : 'nopad'}" id="entry">
       <div class="top"><button class="back" data-act="back">‹ ${esc(c.name)}</button><h1 style="font-size:19px;text-align:right" id="etitle">${esc(itemLabel(c, view.k))}</h1></div>
-      <div class="infobar"><span id="cnt"></span><button data-act="pen" id="penbtn"></button><button data-act="title" id="titlebtn"></button><button data-act="delitem" style="color:var(--danger)">Notu sil</button></div>
+      <div class="infobar"><span id="cnt"></span><button data-act="pen" id="penbtn"></button><button data-act="missing" id="missbtn"></button><button data-act="tonote" id="tonote" style="display:none">Ders notuna ekle</button><button data-act="title" id="titlebtn"></button><button data-act="delitem" style="color:var(--danger)">Notu sil</button></div>
       <div class="hint" id="hint">Not yazmak için öğrencinin yanındaki kutuya dokunun.</div>
       <div class="list" id="list"></div>
       <div class="pad">
@@ -500,7 +518,9 @@
     const list = document.getElementById('list');
 
     function entryOf(i) { const s = c.students[i]; return a.e[s.no] || (a.e[s.no] = { r: null, a: false, l: false, p: 0 }); }
-    function tidy(i) { const s = c.students[i]; const en = a.e[s.no]; if (en && en.r == null && !en.a && !en.l) delete a.e[s.no]; }
+    function tidy(i) { const s = c.students[i]; const en = a.e[s.no]; if (en && en.r == null && !en.a && !en.l && !en.note && !en.due) delete a.e[s.no]; }
+    const isMissing = i => { const f = finalOf(a.e[c.students[i].no]); return f == null || f === 'G'; };
+    const visible = () => view.only || c.students.map((_, i) => i);
     function valHtml(en) {
       const f = finalOf(en);
       if (f === 'G') return `<div class="val"><div class="gbox g">G</div></div>`;
@@ -515,7 +535,9 @@
         ${valHtml(en)}</div>`;
     }
     function drawAll() {
-      list.innerHTML = c.students.map(rowHtml).join('');
+      const vis = visible();
+      list.innerHTML = vis.map(i => rowHtml(c.students[i], i)).join('') ||
+        `<div class="empty" style="padding:28px 12px"><b>Herkes teslim etti</b>Bu notta boş ya da G olan öğrenci yok.</div>`;
       header(); if (view.pad) scrollSel();
     }
     function redraw(i) {
@@ -527,6 +549,10 @@
       document.getElementById('cnt').textContent = `${p.done}/${p.total} girildi`;
       document.getElementById('penbtn').textContent = `Geç kesintisi: −${a.penalty}`;
       document.getElementById('titlebtn').textContent = a.title ? 'Adını değiştir' : 'Ad ver';
+      const miss = c.students.filter((_, i) => isMissing(i)).length;
+      const mb = document.getElementById('missbtn');
+      mb.textContent = view.only ? 'Tümünü göster' : `Teslim etmeyenler (${miss})`; mb.classList.toggle('on', !!view.only);
+      document.getElementById('tonote').style.display = view.only ? '' : 'none';
       document.getElementById('etitle').textContent = itemLabel(c, view.k);
       const en = a.e[c.students[view.sel].no];
       document.getElementById('latekey').classList.toggle('on', !!(en && en.l));
@@ -547,12 +573,13 @@
     }
     function changed(i) { tidy(i); save(); redraw(i); header(); }
     function advance() {
-      if (view.sel >= c.students.length - 1) {
+      const vis = visible(), pos = vis.indexOf(view.sel);
+      if (pos < 0 || pos >= vis.length - 1) {
         const p = progress(c, view.k);
         toast(p.done === p.total ? 'Tüm öğrencilere not girildi' : 'Liste sonu. Boş kalanlar var.');
         view.buf = ''; setPad(false); redraw(view.sel); return;
       }
-      select(view.sel + 1);
+      select(vis[pos + 1]);
     }
     function setLate(i, pen) {
       const en = entryOf(i);
@@ -603,7 +630,7 @@
     const keyMap = { Backspace: '[data-x="del"]', Delete: '[data-x="del"]', Enter: '[data-x="next"]', ArrowDown: '[data-x="next"]', Tab: '[data-x="next"]', Escape: '[data-x="close"]', g: '[data-x="g"]', G: '[data-x="g"]' };
     document.onkeydown = e => {
       if (view.name !== 'entry' || document.querySelector('.sheet-bg') || /INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')) return;
-      if (e.key === 'ArrowUp') { e.preventDefault(); select(view.sel - 1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); const v = visible(), p = v.indexOf(view.sel); if (p > 0) select(v[p - 1]); return; }
       const sel = /^\d$/.test(e.key) ? `[data-d="${e.key}"]` : keyMap[e.key];
       if (!sel) return; e.preventDefault();
       if (!view.pad) setPad(true);
@@ -615,6 +642,17 @@
       const b = e.target.closest('[data-act]'); if (!b) return;
       if (b.dataset.act === 'pen') {
         penaltySheet('Geç teslim kesintisi', 'Bu not için "Geç" düğmesine basınca kırılacak puan', a.penalty, false, v => { a.penalty = v; save(); header(); toast(`Geç kesintisi −${v} oldu`); });
+      } else if (b.dataset.act === 'tonote') {
+        tidy(view.sel); save();
+        go({ name: 'noteedit', id: c.id, prefill: missingText(c, view.k) });
+      } else if (b.dataset.act === 'missing') {
+        if (view.only) view.only = null;
+        else {
+          view.only = c.students.map((_, i) => i).filter(isMissing);
+          if (!view.only.length) { view.only = null; return toast('Bu notta teslim etmeyen yok.'); }
+          if (!view.only.includes(view.sel)) view.sel = view.only[0];
+        }
+        view.buf = ''; drawAll(); list.scrollTop = 0;
       } else if (b.dataset.act === 'delitem') {
         const p = progress(c, view.k);
         ask(`"${itemLabel(c, view.k)}" silinsin mi?${p.done ? `\n${p.done} öğrencinin bu notu da silinecek.` : ''}`, 'Notu sil', true).then(y => {
@@ -629,6 +667,83 @@
     };
     app.onclick = null;
     drawAll();
+  };
+
+  // ---------- ders notları (her sınıfın her dersi için) ----------
+  const notesOf = c => (c.notes = c.notes || []);
+  const termNotes = c => notesOf(c).filter(n => (n.term || 1) === db.term);
+  function missingText(c, k) {
+    const a = getA(c, k, false);
+    const names = c.students.filter(s => { const f = a ? finalOf(a.e[s.no]) : null; return f == null || f === 'G'; })
+      .map(s => (hasNo(s) ? s.no + ' ' : '') + s.name);
+    return `${itemLabel(c, k)} teslim etmeyenler (${names.length}):\n` + names.join('\n');
+  }
+
+  VIEWS.notes = function () {
+    const c = cls(view.id); if (!c) return home();
+    const list = termNotes(c).slice().sort((x, y) => (y.date || '').localeCompare(x.date || '') || (y.id > x.id ? 1 : -1));
+    const t = today();
+    app.innerHTML = `<div class="top"><button class="back" data-act="back">‹ ${esc(c.name)}</button><h1 style="font-size:19px;text-align:right">Ders notları</h1></div>
+      <div class="wrap">
+        <div class="sub" style="margin:0 4px 10px">${esc([c.name, c.lesson, db.term + '. Dönem'].filter(Boolean).join(' · '))}</div>
+        <button class="btn" data-act="new" style="margin-top:0">+ Yeni not</button>
+        ${list.map(n => {
+          const over = n.due && n.due < t && !n.done;
+          return `<div class="card notecard ${n.done ? 'done' : ''}" style="margin-top:10px" data-act="edit" data-id="${n.id}">
+            <div class="nhead"><span class="sub">${fmtDate(n.date)}</span>
+              ${n.due ? `<span class="due ${over ? 'over' : ''}">Teslim: ${dueLabel(n.due)}${over ? ' (geçti)' : ''}</span>` : ''}
+              ${n.done ? '<span class="chip g">Tamamlandı</span>' : ''}</div>
+            <div class="ntext">${esc(n.text)}</div></div>`;
+        }).join('') || `<div class="empty" style="padding:28px 16px"><b>Henüz not yok</b>Bu sınıfın bu dersi için hatırlatmalarınızı yazın: yeni teslim tarihleri, eksik ödevler, yapılacaklar.</div>`}
+      </div>`;
+    app.onclick = e => {
+      const a = e.target.closest('[data-act]'); if (!a) return;
+      if (a.dataset.act === 'back') back();
+      else if (a.dataset.act === 'new') go({ name: 'noteedit', id: c.id });
+      else if (a.dataset.act === 'edit') go({ name: 'noteedit', id: c.id, nid: a.dataset.id });
+    };
+  };
+
+  VIEWS.noteedit = function () {
+    const c = cls(view.id); if (!c) return home();
+    const n = view.nid ? notesOf(c).find(x => x.id === view.nid) : null;
+    const items = sortedItems(c);
+    app.innerHTML = `<div class="top"><button class="back" data-act="back">‹ Vazgeç</button><h1 style="font-size:19px;text-align:right">${n ? 'Notu düzenle' : 'Yeni not'}</h1></div>
+      <div class="wrap">
+        <div class="sub" style="margin:0 4px 10px">${esc([c.name, c.lesson].filter(Boolean).join(' · '))}</div>
+        <div class="card"><textarea id="nt-text" class="ta" rows="7" placeholder="Proje teslim etmeyenler: Ali, Ayşe. Yeni teslim haftaya Çarşamba.">${esc(n ? n.text : (view.prefill || ''))}</textarea></div>
+        ${items.length ? `<div class="chips">${items.map(k => `<button class="rchip" data-act="addmissing" data-k="${k}">+ ${esc(itemLabel(c, k))} teslim etmeyenler</button>`).join('')}</div>` : ''}
+        <div class="card" style="margin-top:12px">
+          <label class="field"><span>Tarih</span><input id="nt-date" type="date" value="${esc(n ? n.date : today())}"></label>
+          <label class="field"><span>Teslim / hatırlatma tarihi (isteğe bağlı)</span><input id="nt-due" type="date" value="${esc(n && n.due ? n.due : '')}"></label>
+        </div>
+        <div class="chips">${dueChips()}<button class="rchip" data-act="nodue">Tarih yok</button></div>
+        ${n ? `<div class="card" style="margin-top:12px"><div class="row tap" data-act="done"><span class="check ${n.done ? 'on' : ''}" id="nt-done">${n.done ? '✓' : ''}</span><div class="grow">Tamamlandı</div></div></div>` : ''}
+        <button class="btn" data-act="save">Kaydet</button>
+        ${n ? '<button class="btn danger" data-act="delete">Notu sil</button>' : ''}
+      </div>`;
+    let done = !!(n && n.done);
+    const ta = document.getElementById('nt-text');
+    app.onclick = e => {
+      const d = e.target.closest('[data-due]'); if (d) { document.getElementById('nt-due').value = d.dataset.due; return; }
+      const a = e.target.closest('[data-act]'); if (!a) return;
+      const act = a.dataset.act;
+      if (act === 'back') back();
+      else if (act === 'nodue') document.getElementById('nt-due').value = '';
+      else if (act === 'addmissing') { ta.value = (ta.value.trim() ? ta.value.trim() + '\n\n' : '') + missingText(c, a.dataset.k); }
+      else if (act === 'done') { done = !done; const ch = document.getElementById('nt-done'); ch.classList.toggle('on', done); ch.textContent = done ? '✓' : ''; }
+      else if (act === 'save') {
+        const text = ta.value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').trim().slice(0, 4000);
+        if (!text) return toast('Notu yazın.');
+        const date = document.getElementById('nt-date').value || today();
+        const due = document.getElementById('nt-due').value || '';
+        if (n) Object.assign(n, { text, date, due, done });
+        else notesOf(c).push({ id: uid(), text, date, due, done: false, term: db.term });
+        save(); view.prefill = ''; back(); toast(n ? 'Not güncellendi' : 'Not eklendi');
+      } else if (act === 'delete') {
+        ask('Bu not silinsin mi?', 'Sil', true).then(y => { if (y) { c.notes = notesOf(c).filter(x => x !== n); save(); back(); toast('Not silindi'); } });
+      }
+    };
   };
 
   // ---------- puan kırma kayıtları ----------
@@ -1037,6 +1152,10 @@
       const st = c.students.find(x => x.no === l.no);
       logRows.push([c.name, c.lesson || null, fmtDate(l.date), st && hasNo(st) ? +st.no : null, st ? st.name : '', l.pts || null, l.reason || null]);
     }
+    const noteRows = [['Sınıf', 'Ders', 'Tarih', 'Teslim / hatırlatma', 'Durum', 'Not']];
+    for (const c of sorted) for (const n of termNotes(c).slice().sort((x, y) => (x.date || '').localeCompare(y.date || '')))
+      noteRows.push([c.name, c.lesson || null, fmtDate(n.date), n.due ? fmtDate(n.due) : null, n.done ? 'Tamamlandı' : 'Açık', n.text]);
+    if (noteRows.length > 1) sheets.push({ name: 'Ders notları', rows: noteRows, widths: [10, 16, 12, 18, 12, 70], headerRows: [0], freezeRow: 1 });
     if (logRows.length > 1) sheets.push({ name: 'Puan kırma', rows: logRows, widths: [10, 16, 12, 15, 30, 12, 40], headerRows: [0], freezeRow: 1 });
     sheets.push({ name: 'Ayrıntı', rows: detail, widths: [10, 8, 18, 8, 15, 30, 9, 11, 9, 9], headerRows: [0], freezeRow: 1 });
     const blob = Excel.writeXLSX(sheets);

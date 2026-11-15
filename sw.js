@@ -1,4 +1,4 @@
-const CACHE = 'notdefteri-v1.13';
+const CACHE = 'notdefteri-v1.14';
 const FILES = ['./', 'index.html', 'app.js', 'excel.js', 'pdf.js', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
