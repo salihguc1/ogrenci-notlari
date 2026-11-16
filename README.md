@@ -1,4 +1,4 @@
-# Not Defteri
+# Öğrenci Notları
 
 Performans ve proje notlarını iPhone'dan hızlıca girip e-Okul düzeninde Excel'e ve imzaya hazır PDF'e aktaran web uygulaması.
 

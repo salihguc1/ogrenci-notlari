@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const VERSION = '1.14';
+  const VERSION = '1.15';
   const KEY = 'notdefteri.v1';
   const app = document.getElementById('app');
   let EMBED = false; try { EMBED = window.self !== window.top; } catch (e) { EMBED = true; }
@@ -266,7 +266,7 @@
   const VIEWS = {};
 
   VIEWS.lock = function () {
-    pinView('Not Defteri', 'PIN kodunuzu girin', {
+    pinView('Öğrenci Notları', 'PIN kodunuzu girin', {
       left: 'Unuttum',
       onLeft() {
         ask('PIN\'i unuttuysanız tek yol tüm verileri silmektir. Son aldığınız yedekten geri yükleyebilirsiniz.\n\nTüm sınıflar ve notlar silinsin mi?', 'Verileri sil', true).then(y => {
@@ -311,7 +311,7 @@
     app.innerHTML = `<div class="lock" style="justify-content:center">
       <img class="logo" src="icon-180.png" alt="">
       <div style="text-align:center;max-width:320px">
-        <div style="font-size:24px;font-weight:700;margin-bottom:8px">Not Defteri</div>
+        <div style="font-size:24px;font-weight:700;margin-bottom:8px">Öğrenci Notları</div>
         <div class="sub" style="font-size:15px">Performans ve proje notlarını hızlıca girin, e-Okul düzeninde Excel'e aktarın.<br><br>Notlar yalnızca bu telefonda saklanır. Telefonunuz başkasının eline geçtiğinde notlar görünmesin diye 4 haneli bir PIN belirleyin.</div>
       </div>
       <div style="width:100%;max-width:340px">
@@ -992,7 +992,7 @@
         <div class="note">Notlar yalnızca bu telefonda saklanır. Safari geçmişini silmek ya da telefonu değiştirmek notları kaybettirir. Ayda bir yedek alıp Dosyalar'a veya Drive'a kaydedin.</div>
         <div class="sec">Veriler</div>
         <div class="card"><div class="row tap" data-act="wipe"><div class="grow" style="color:var(--danger)">Tüm verileri sil</div></div></div>
-        <div class="note" style="text-align:center;margin-top:20px">Not Defteri ${VERSION}</div>
+        <div class="note" style="text-align:center;margin-top:20px">Öğrenci Notları ${VERSION}</div>
       </div>`;
     app.onclick = async e => {
       const a = e.target.closest('[data-act]'); if (!a) return;
@@ -1004,7 +1004,7 @@
       else if (act === 'pen') penaltySheet('Varsayılan geç teslim kesintisi', 'Yeni notlarda "Geç" düğmesiyle kırılacak puan', db.defaultPenalty, false, v => { db.defaultPenalty = v; save(); render(); });
       else if (act === 'backup') {
         const data = Object.assign({}, db, { pinHash: null, exportedAt: new Date().toISOString(), app: 'notdefteri' });
-        shareFile(new Blob([JSON.stringify(data)], { type: 'application/json' }), `NotDefteri_Yedek_${today()}.json`);
+        shareFile(new Blob([JSON.stringify(data)], { type: 'application/json' }), `OgrenciNotlari_Yedek_${today()}.json`);
       } else if (act === 'restore') {
         pickFile(async f => {
           try {
@@ -1013,7 +1013,7 @@
             if (!(await ask(`Yedekte ${d.classes.length} sınıf var. Şu anki verilerin yerine yedek yüklensin mi?`, 'Yedeği yükle', true))) return;
             const pin = db.pinHash; db = Object.assign(fresh(), d, { pinHash: pin, onboarded: true }); applyTheme();
             delete db.app; delete db.exportedAt; save(); home(); toast('Yedek yüklendi');
-          } catch (err) { toast('Bu dosya bir Not Defteri yedeği değil.'); }
+          } catch (err) { toast('Bu dosya bir Öğrenci Notları yedeği değil.'); }
         });
       } else if (act === 'wipe') {
         if (await ask('Tüm sınıflar, öğrenciler ve notlar silinsin mi?', 'Tümünü sil', true) && await ask('Emin misiniz? Bu işlem geri alınamaz.', 'Evet, sil', true)) {

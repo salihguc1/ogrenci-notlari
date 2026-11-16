@@ -1,6 +1,6 @@
 {
-  "name": "Not Defteri",
-  "short_name": "Not Defteri",
+  "name": "Öğrenci Notları",
+  "short_name": "Öğrenci Notları",
   "description": "Performans ve proje notlarını hızlıca girin, e-Okul düzeninde Excel'e aktarın.",
   "lang": "tr",
   "start_url": "./",
