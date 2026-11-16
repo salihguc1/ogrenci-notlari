@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const VERSION = '1.16';
+  const VERSION = '1.17';
   const KEY = 'notdefteri.v1';
   const app = document.getElementById('app');
   let EMBED = false; try { EMBED = window.self !== window.top; } catch (e) { EMBED = true; }
@@ -1207,6 +1207,7 @@
     swipeEndAt = Date.now();
   };
   app.addEventListener('pointerup', swEnd); app.addEventListener('pointercancel', swEnd);
+  app.addEventListener('dragstart', e => { if (e.target.closest && e.target.closest('.swipe-c')) e.preventDefault(); });
   // kaydırmanın sonundaki dokunuş sınıfı açmasın
   document.addEventListener('click', e => {
     if (Date.now() - swipeEndAt < 350 && !e.target.closest('.swipe-del')) { e.stopPropagation(); e.preventDefault(); }

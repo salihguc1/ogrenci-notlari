@@ -2,13 +2,15 @@
 // İlke: uygulama HER ZAMAN telefondaki kopyadan anında açılır (internet yavaş, yok ya da
 // "giriş yapın" sayfası çıkarıyor olsa bile). Yeni sürüm arka planda indirilir; gelen her
 // dosya doğrulanır, biri bile bozuksa güncelleme reddedilir ve çalışan kopyaya dokunulmaz.
-const VERSION = '1.16';
+const VERSION = '1.17';
 const CACHE = 'ogrenci-notlari-' + VERSION;
 const FILES = ['./', 'index.html', 'app.js', 'excel.js', 'pdf.js', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 
 // Dosyanın gerçekten bizim dosyamız olduğunu kontrol et (giriş sayfası / hata sayfası değil)
 async function validated(path) {
-  const r = await fetch(path, { cache: 'no-store', redirect: 'follow' });
+  return check(path, await fetch(path, { cache: 'no-store', redirect: 'follow' }));
+}
+async function check(path, r) {
   if (!r.ok) throw new Error('indirilemedi: ' + path + ' ' + r.status);
   if (r.redirected && new URL(r.url).origin !== self.location.origin) throw new Error('yönlendirildi: ' + path);
   const ct = (r.headers.get('content-type') || '').toLowerCase();
@@ -46,6 +48,13 @@ self.addEventListener('activate', e => {
   })());
 });
 
+// Önbellek (iPhone tarafından) silinmişse: internetten al, doğrulanırsa yeniden kaydet
+async function heal(c, path, req) {
+  const r = await fetch(req.mode === 'navigate' ? path : req, { cache: 'no-store' });
+  try { await c.put(path, await check(path, r.clone())); } catch (e) { }
+  return r;
+}
+
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
@@ -54,10 +63,15 @@ self.addEventListener('fetch', e => {
   e.respondWith((async () => {
     const c = await caches.open(CACHE);
     if (req.mode === 'navigate') {
-      return (await c.match('./')) || (await c.match('index.html')) || fetch(req);
+      const page = (await c.match('./')) || (await c.match('index.html'));
+      if (page) return page;
+      return heal(c, './', req);
     }
     const hit = await c.match(req, { ignoreSearch: true });
     if (hit) return hit;
+    const scope = new URL(self.registration.scope);
+    const rel = url.pathname.startsWith(scope.pathname) ? url.pathname.slice(scope.pathname.length) : null;
+    if (rel && FILES.includes(rel)) return heal(c, rel, req);
     return fetch(req);
   })());
 });
