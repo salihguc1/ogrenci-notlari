@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const VERSION = '1.15';
+  const VERSION = '1.16';
   const KEY = 'notdefteri.v1';
   const app = document.getElementById('app');
   let EMBED = false; try { EMBED = window.self !== window.top; } catch (e) { EMBED = true; }
@@ -1216,7 +1216,17 @@
   if (loadWarning) setTimeout(() => ask(loadWarning, 'Tamam'), 400);
   if (db.pinHash) lock(); else render();
   try {
-    if (!EMBED && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => { });
+    if (!EMBED && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+        setTimeout(() => reg.update().catch(() => { }), 1500);   // her açılışta yeni sürüm var mı sor
+        // uygulama arka plandan dönünce de güncelleme var mı bak (sessizce; hata olursa önemsiz)
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => { }); });
+      }).catch(() => { });
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (hadController) toast('Yeni sürüm indirildi. Uygulamayı kapatıp açınca etkinleşir.');
+      });
+    }
   } catch (e) { }
-  window.__nd = { get db() { return db; } };
+  window.__nd = { get db() { return db; }, version: VERSION };
 })();
