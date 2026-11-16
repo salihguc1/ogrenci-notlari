@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const VERSION = '1.18';
+  const VERSION = '1.19';
   const KEY = 'notdefteri.v1';
   const app = document.getElementById('app');
   let EMBED = false; try { EMBED = window.self !== window.top; } catch (e) { EMBED = true; }
@@ -78,6 +78,10 @@
     try { theirs = JSON.parse(stored); } catch (e) { return false; }
     try { base = lastSaved ? JSON.parse(lastSaved) : {}; } catch (e) { base = {}; }
     assignInPlace(db, Object.assign(fresh(), merge3(base, JSON.parse(JSON.stringify(db)), theirs)));
+    for (const c of db.classes || []) if (Array.isArray(c.students)) {   // birleşince e-Okul sırası bozulmasın
+      const sorted = c.students.filter(x => /^\d+$/.test(x.no)).sort((x, y) => (+x.no) - (+y.no)).concat(c.students.filter(x => !/^\d+$/.test(x.no)));
+      if (sorted.some((x, i) => x !== c.students[i])) c.students = sorted;
+    }
     lastSaved = stored;
     return true;
   }
@@ -564,6 +568,7 @@
   // ---------- not girişi ----------
   VIEWS.entry = function () {
     const c = cls(view.id); if (!c) return home();
+    if (!itemsOf(c).includes(view.k)) { view = stack.pop() || { name: 'home' }; render(); toast('Bu not başka bir pencerede silindi.'); return; }
     const a = getA(c, view.k, true);
     view.pad = !!view.pad;
     app.innerHTML = `<div class="entry ${view.pad ? '' : 'nopad'}" id="entry">
@@ -802,7 +807,7 @@
         if (!text) return toast('Notu yazın.');
         const date = document.getElementById('nt-date').value || today();
         const due = document.getElementById('nt-due').value || '';
-        if (n) Object.assign(n, { text, date, due, done });
+        if (n) { Object.assign(n, { text, date, due, done }); if (!notesOf(c).includes(n)) { notesOf(c).push(n); setTimeout(() => toast('Bu not başka bir pencerede silinmişti, yeniden kaydedildi.'), 400); } }
         else notesOf(c).push({ id: uid(), text, date, due, done: false, term: db.term });
         save(); view.prefill = ''; back(); toast(n ? 'Not güncellendi' : 'Not eklendi');
       } else if (act === 'delete') {
@@ -873,7 +878,7 @@
         if (ptsS && (!/^\d+$/.test(ptsS) || +ptsS > 100)) return toast('Puan 0 ile 100 arasında bir sayı olmalı.');
         const reason = document.getElementById('l-reason').value.trim().slice(0, 200);
         if (!reason && !ptsS) return toast('Sebep ya da puan yazın.');
-        if (l) Object.assign(l, { no: sno, date, pts: ptsS ? +ptsS : null, reason });
+        if (l) { Object.assign(l, { no: sno, date, pts: ptsS ? +ptsS : null, reason }); if (!logsOf(c).includes(l)) logsOf(c).push(l); }
         else logsOf(c).push({ id: uid(), no: sno, date, pts: ptsS ? +ptsS : null, reason, term: db.term });
         save(); back(); toast(l ? 'Kayıt güncellendi' : 'Kayıt eklendi');
       } else if (act === 'delete') {

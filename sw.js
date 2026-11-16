@@ -2,7 +2,7 @@
 // İlke: uygulama HER ZAMAN telefondaki kopyadan anında açılır (internet yavaş, yok ya da
 // "giriş yapın" sayfası çıkarıyor olsa bile). Yeni sürüm arka planda indirilir; gelen her
 // dosya doğrulanır, biri bile bozuksa güncelleme reddedilir ve çalışan kopyaya dokunulmaz.
-const VERSION = '1.18';
+const VERSION = '1.19';
 const CACHE = 'ogrenci-notlari-' + VERSION;
 const FILES = ['./', 'index.html', 'app.js', 'excel.js', 'pdf.js', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 
