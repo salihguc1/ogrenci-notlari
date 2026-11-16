@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const VERSION = '1.17';
+  const VERSION = '1.18';
   const KEY = 'notdefteri.v1';
   const app = document.getElementById('app');
   let EMBED = false; try { EMBED = window.self !== window.top; } catch (e) { EMBED = true; }
@@ -20,9 +20,74 @@
     }
   }
   let db = load();
+
+  // ---- iki pencere aynı anda çalışırsa: değişiklikleri birleştir, hiçbirini silme ----
+  let lastSaved = (() => { try { return localStorage.getItem(KEY); } catch (e) { return null; } })();
+  const isObj = x => x && typeof x === 'object' && !Array.isArray(x);
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const keyOf = x => isObj(x) ? (x.id != null ? 'i:' + x.id : (x.no != null ? 'n:' + x.no : null)) : null;
+  // base: son ortak hâl, ours: bu pencere, theirs: öteki pencere
+  function merge3(base, ours, theirs) {
+    if (same(ours, theirs) || same(ours, base)) return theirs;
+    if (same(theirs, base)) return ours;
+    if (isObj(ours) && isObj(theirs)) {
+      const b = isObj(base) ? base : {}, out = {};
+      for (const k of new Set([...Object.keys(ours), ...Object.keys(theirs)])) {
+        const inO = k in ours, inT = k in theirs;
+        if (inO && inT) out[k] = merge3(b[k], ours[k], theirs[k]);
+        else if (inO) { if (!(k in b && same(b[k], ours[k]))) out[k] = ours[k]; }       // öteki sildiyse ve biz değiştirmediysek: silinmiş kalsın
+        else { if (!(k in b && same(b[k], theirs[k]))) out[k] = theirs[k]; }
+      }
+      return out;
+    }
+    if (Array.isArray(ours) && Array.isArray(theirs)) {
+      const bArr = Array.isArray(base) ? base : [];
+      if ([...ours, ...theirs].every(keyOf)) {
+        const B = new Map(bArr.filter(keyOf).map(x => [keyOf(x), x])), O = new Map(ours.map(x => [keyOf(x), x])), T = new Map(theirs.map(x => [keyOf(x), x]));
+        const out = [];
+        for (const k of [...ours.map(keyOf), ...theirs.map(keyOf).filter(k => !O.has(k))]) {
+          const o = O.get(k), t = T.get(k), bb = B.get(k);
+          if (o && t) out.push(merge3(bb, o, t));
+          else if (o) { if (!(bb && same(bb, o))) out.push(o); }
+          else if (!(bb && same(bb, t))) out.push(t);
+        }
+        return out;
+      }
+      if ([...ours, ...theirs].every(x => typeof x !== 'object')) {
+        const bs = new Set(bArr), out = ours.filter(x => theirs.includes(x) || !bs.has(x));
+        for (const x of theirs) if (!out.includes(x) && !bs.has(x)) out.push(x);
+        return out;
+      }
+    }
+    return ours;   // aynı alan iki yerde farklı değiştiyse: bu penceredeki kazanır
+  }
+  // açık ekranların tuttuğu nesneler geçerli kalsın diye veriyi yerinde güncelle
+  function assignInPlace(t, src) {
+    for (const k of Object.keys(t)) if (!(k in src)) delete t[k];
+    for (const [k, v] of Object.entries(src)) {
+      const cur = t[k];
+      if (isObj(v) && isObj(cur)) assignInPlace(cur, v);
+      else if (Array.isArray(v) && Array.isArray(cur) && v.length && v.every(keyOf)) {
+        const m = new Map(cur.filter(keyOf).map(x => [keyOf(x), x]));
+        t[k] = v.map(x => { const old = m.get(keyOf(x)); if (old) { assignInPlace(old, x); return old; } return x; });
+      } else t[k] = v;
+    }
+  }
+  function syncFrom(stored) {
+    let theirs, base;
+    try { theirs = JSON.parse(stored); } catch (e) { return false; }
+    try { base = lastSaved ? JSON.parse(lastSaved) : {}; } catch (e) { base = {}; }
+    assignInPlace(db, Object.assign(fresh(), merge3(base, JSON.parse(JSON.stringify(db)), theirs)));
+    lastSaved = stored;
+    return true;
+  }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(db)); saveBanner(false); }
-    catch (e) { saveBanner(true); }
+    try {
+      const stored = localStorage.getItem(KEY);
+      if (stored && stored !== lastSaved) syncFrom(stored);   // arada başka pencere kaydetmiş
+      const out = JSON.stringify(db);
+      localStorage.setItem(KEY, out); lastSaved = out; saveBanner(false);
+    } catch (e) { saveBanner(true); }
   }
   function applyTheme() {
     const t = db.theme === 'dark' || db.theme === 'light' ? db.theme : '';
@@ -271,7 +336,7 @@
       onLeft() {
         ask('PIN\'i unuttuysanız tek yol tüm verileri silmektir. Son aldığınız yedekten geri yükleyebilirsiniz.\n\nTüm sınıflar ve notlar silinsin mi?', 'Verileri sil', true).then(y => {
           if (!y) return;
-          ask('Emin misiniz? Bu işlem geri alınamaz.', 'Evet, sil', true).then(y2 => { if (y2) { try { localStorage.removeItem(KEY); } catch (e) { } db = fresh(); locked = false; home(); } });
+          ask('Emin misiniz? Bu işlem geri alınamaz.', 'Evet, sil', true).then(y2 => { if (y2) { try { localStorage.removeItem(KEY); } catch (e) { } db = fresh(); lastSaved = null; locked = false; home(); } });
         });
       },
       async onDone(p) {
@@ -1010,14 +1075,23 @@
           try {
             const d = JSON.parse(await f.text());
             if (d.app !== 'notdefteri' || !Array.isArray(d.classes)) throw 0;
-            if (!(await ask(`Yedekte ${d.classes.length} sınıf var. Şu anki verilerin yerine yedek yüklensin mi?`, 'Yedeği yükle', true))) return;
-            const pin = db.pinHash; db = Object.assign(fresh(), d, { pinHash: pin, onboarded: true }); applyTheme();
-            delete db.app; delete db.exportedAt; save(); home(); toast('Yedek yüklendi');
+            const count = x => { let n = 0; for (const c of x.classes || []) for (const t of Object.values(c.terms || {})) for (const a of Object.values(t)) n += Object.keys((a && a.e) || {}).length; return n; };
+            const when = d.exportedAt ? new Date(d.exportedAt) : null;
+            const ws = when && !isNaN(when) ? `${String(when.getDate()).padStart(2, '0')}.${String(when.getMonth() + 1).padStart(2, '0')}.${when.getFullYear()} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : 'bilinmiyor';
+            if (!(await ask(`Yedeğin tarihi: ${ws}\nYedekte: ${d.classes.length} sınıf, ${count(d)} not\nŞu an telefonda: ${db.classes.length} sınıf, ${count(db)} not\n\nŞu anki verilerin yerine yedek yüklensin mi? Yedekten sonra girilen notlar silinir.`, 'Yedeği yükle', true))) return;
+            try { localStorage.setItem(KEY + '.yuklemeoncesi', JSON.stringify(db)); } catch (e2) { }
+            const pin = db.pinHash, term = db.term;
+            db = Object.assign(fresh(), d, { pinHash: pin, onboarded: true, term }); applyTheme();
+            delete db.app; delete db.exportedAt; lastSaved = null;
+            try { localStorage.setItem(KEY, JSON.stringify(db)); lastSaved = JSON.stringify(db); saveBanner(false); } catch (e3) { saveBanner(true); }
+            home(); toast('Yedek yüklendi');
           } catch (err) { toast('Bu dosya bir Öğrenci Notları yedeği değil.'); }
         });
       } else if (act === 'wipe') {
         if (await ask('Tüm sınıflar, öğrenciler ve notlar silinsin mi?', 'Tümünü sil', true) && await ask('Emin misiniz? Bu işlem geri alınamaz.', 'Evet, sil', true)) {
-          const pin = db.pinHash; db = fresh(); db.pinHash = pin; db.onboarded = true; save(); home(); toast('Tüm veriler silindi');
+          const pin = db.pinHash; db = fresh(); db.pinHash = pin; db.onboarded = true;
+          try { const out = JSON.stringify(db); localStorage.setItem(KEY, out); lastSaved = out; } catch (e2) { }
+          home(); toast('Tüm veriler silindi');
         }
       }
     };
@@ -1165,12 +1239,18 @@
 
   // başka bir pencere/sekme veriyi değiştirirse güncel veriyi al (birbirinin notunu silmesin)
   window.addEventListener('storage', e => {
-    if (e.key !== KEY || !e.newValue) return;
-    try { db = Object.assign(fresh(), JSON.parse(e.newValue)); } catch (err) { return; }
+    if (e.key !== KEY || !e.newValue || e.newValue === lastSaved) return;
+    const before = JSON.stringify(db);
+    if (!syncFrom(e.newValue)) return;
+    if (JSON.stringify(db) !== e.newValue) save();   // bizdeki kaydedilmemiş değişiklik birleşti: yaz
+    if (JSON.stringify(db) === before) return;
     applyTheme();
     if (locked) return;
+    // kullanıcı bir şey yazıyor ya da pencere açıksa ekranı yenileme (açık ekran güncel veriyle çalışmaya devam eder)
+    const busy = document.querySelector('.sheet-bg') || ['noteedit', 'info', 'newclass', 'logedit', 'import', 'students', 'setpin', 'verifypin'].includes(view.name);
+    if (busy) return;
     if (view.name === 'entry') { const sc = (document.getElementById('list') || {}).scrollTop || 0; render(); const l = document.getElementById('list'); if (l) l.scrollTop = sc; }
-    else if (!document.querySelector('.sheet-bg') && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '')) render();
+    else render();
   });
 
   // ---------- sola kaydırınca "Sil" (iPhone'daki gibi) ----------
